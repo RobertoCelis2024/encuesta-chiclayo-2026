@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encuesta de opinión - Chiclayo 2026</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#263238;--accent:#6a1b9a;--bg:#f4f6f8;--card:#fff;--text:#263238;--muted:#68737d;--border:#e1e5e8}
+*{box-sizing:border-box} body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+.container{max-width:900px;margin:0 auto;padding:24px 16px 50px}
+header{background:var(--primary);color:white;padding:28px 22px;border-radius:16px;margin-bottom:20px}
+h1{margin:0 0 8px;font-size:clamp(25px,4vw,36px)} header p{margin:5px 0;color:#e7ebee}
+.notice{background:#fff8e1;border-left:5px solid #f9a825;padding:14px 16px;border-radius:10px;margin-bottom:18px;font-size:14px;line-height:1.5}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:0 3px 12px rgba(0,0,0,.04)}
+.candidate{display:flex;align-items:center;gap:15px;border:1px solid var(--border);border-radius:13px;padding:12px;margin:10px 0;cursor:pointer;transition:.15s;background:#fff}
+.candidate:hover{border-color:#aaa;transform:translateY(-1px)}
+.candidate.selected{border:2px solid var(--accent);background:#faf5fc}
+.logo-wrap{width:62px;height:62px;min-width:62px;border:1px solid #ddd;border-radius:10px;background:white;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.logo{max-width:52px;max-height:52px;object-fit:contain}
+.logo-fallback{font-weight:700;color:#666;font-size:12px;text-align:center;padding:4px}
+.candidate-info{flex:1}.candidate-name{font-weight:700;font-size:16px}.party{font-size:13px;color:var(--muted);margin-top:4px}
+.radio{width:20px;height:20px;accent-color:var(--accent)}
+button{border:0;border-radius:10px;padding:13px 18px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer;font-size:15px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.status{margin-top:12px;font-size:14px;min-height:20px}.ok{color:#2e7d32}.error{color:#c62828}
+.results{margin-top:24px}.result{margin:13px 0}.result-head{display:flex;justify-content:space-between;gap:12px;font-size:14px;margin-bottom:5px}.bar-bg{height:12px;background:#e9ecef;border-radius:99px;overflow:hidden}.bar{height:100%;background:var(--accent);border-radius:99px}
+.small{font-size:12px;color:var(--muted);line-height:1.5}.footer{text-align:center;margin-top:20px}
+@media(max-width:560px){.candidate{gap:10px}.logo-wrap{width:54px;height:54px;min-width:54px}.logo{max-width:46px;max-height:46px}.candidate-name{font-size:15px}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>Encuesta de opinión — Alcaldía Provincial de Chiclayo 2026</h1>
+  <p>Encuesta voluntaria de opinión ciudadana</p>
+</header>
+
+<div class="notice">
+  <strong>Importante:</strong> esta es una encuesta privada y voluntaria de opinión.
+  No es una encuesta oficial del JNE ni de la ONPE y no constituye un voto electoral.
+  Los resultados son únicamente referenciales.
+</div>
+
+<div class="card">
+  <h2>¿Por quién votaría si las elecciones fueran hoy?</h2>
+  <div id="candidates">Cargando candidatos...</div>
+  <button id="voteBtn" disabled>Registrar mi voto</button>
+  <div id="status" class="status"></div>
+</div>
+
+<div class="card results">
+  <h2>Resultados de la encuesta</h2>
+  <div id="results">Cargando resultados...</div>
+  <p class="small">Los resultados se actualizan automáticamente. La encuesta utiliza un identificador anónimo almacenado en el navegador para reducir votos repetidos desde el mismo navegador.</p>
+</div>
+
+<div class="footer small">
+  Encuesta independiente · Chiclayo · 2026
+</div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://kififdlrgwygwchtxyca.supabase.co";
+const SUPABASE_KEY = "sb_publishable_mfXYtCp7r_YzzQrXWtpAVw_bztBVzTr";
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let selectedCandidate = null;
+
+function getVoterToken(){
+  let token = localStorage.getItem("chiclayo_poll_voter_token");
+  if(!token){
+    token = crypto.randomUUID();
+    localStorage.setItem("chiclayo_poll_voter_token", token);
+  }
+  return token;
+}
+
+function logoUrl(path){
+  if(!path) return null;
+  if(path.startsWith("http://") || path.startsWith("https://")) return path;
+  return `${SUPABASE_URL}/storage/v1/object/public/logos/${path}`;
+}
+
+function initials(name){
+  return name.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join("").toUpperCase();
+}
+
+async function loadCandidates(){
+  const {data,error} = await db.from("candidates")
+    .select("id,name,political_party,logo_url")
+    .eq("active",true)
+    .order("id");
+  if(error){ document.getElementById("candidates").textContent="No se pudieron cargar los candidatos."; console.error(error); return; }
+
+  const box=document.getElementById("candidates");
+  box.innerHTML="";
+  data.forEach(c=>{
+    const row=document.createElement("label");
+    row.className="candidate";
+    row.innerHTML=`
+      <div class="logo-wrap">
+        <img class="logo" src="${logoUrl(c.logo_url)||''}" alt="" style="${c.logo_url?'':'display:none'}">
+        <span class="logo-fallback" style="${c.logo_url?'display:none':''}">${initials(c.political_party)}</span>
+      </div>
+      <div class="candidate-info">
+        <div class="candidate-name">${escapeHtml(c.name)}</div>
+        <div class="party">${escapeHtml(c.political_party)}</div>
+      </div>
+      <input class="radio" type="radio" name="candidate" value="${c.id}">
+    `;
+    row.addEventListener("click",()=>selectCandidate(c.id,row));
+    const img=row.querySelector("img");
+    img?.addEventListener("error",()=>{
+      img.style.display="none";
+      row.querySelector(".logo-fallback").style.display="block";
+    });
+    box.appendChild(row);
+  });
+}
+
+function selectCandidate(id,row){
+  selectedCandidate=id;
+  document.querySelectorAll(".candidate").forEach(x=>x.classList.remove("selected"));
+  row.classList.add("selected");
+  row.querySelector("input").checked=true;
+  document.getElementById("voteBtn").disabled=false;
+}
+
+async function vote(){
+  if(!selectedCandidate) return;
+  const btn=document.getElementById("voteBtn"), status=document.getElementById("status");
+  btn.disabled=true; status.className="status"; status.textContent="Registrando...";
+
+  const {data,error}=await db.functions.invoke("register-vote",{
+    body:{
+      candidate_id:selectedCandidate,
+      voter_token:getVoterToken()
+    }
+  });
+
+  if(error){
+    const statusCode = error.context?.status;
+
+    if(statusCode===409){
+      status.className="status error";
+      status.textContent="Este navegador ya registró un voto en esta encuesta.";
+    }else{
+      status.className="status error";
+      status.textContent="No se pudo registrar el voto. Inténtalo nuevamente.";
+      console.error(error);
+    }
+
+    btn.disabled=false;
+    return;
+  }
+
+  status.className="status ok";
+  status.textContent="Tu voto fue registrado. Gracias por participar.";
+  await loadResults();
+}
+    btn.disabled=false; return;
+  }
+  status.className="status ok";
+  status.textContent="Tu opinión fue registrada. Gracias por participar.";
+  await loadResults();
+}
+
+async function loadResults(){
+  const {data,error}=await db.rpc("get_poll_results");
+  const box=document.getElementById("results");
+  if(error){box.textContent="No se pudieron cargar los resultados."; console.error(error); return;}
+  if(!data.length){box.textContent="Todavía no hay candidatos registrados.";return;}
+  box.innerHTML="";
+  data.forEach(r=>{
+    const el=document.createElement("div"); el.className="result";
+    const pct=Number(r.percentage||0);
+    el.innerHTML=`<div class="result-head"><span>${escapeHtml(r.candidate_name)}</span><strong>${pct.toFixed(2)}%</strong></div><div class="bar-bg"><div class="bar" style="width:${Math.min(100,pct)}%"></div></div><div class="small">${r.votes} opinión(es)</div>`;
+    box.appendChild(el);
+  });
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+}
+
+document.getElementById("voteBtn").addEventListener("click",vote);
+loadCandidates();
+loadResults();
+setInterval(loadResults,30000);
+</script>
+</body>
+</html>
