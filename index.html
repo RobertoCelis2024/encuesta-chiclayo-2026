@@ -160,12 +160,6 @@ async function vote(){
   status.textContent="Tu voto fue registrado. Gracias por participar.";
   await loadResults();
 }
-    btn.disabled=false; return;
-  }
-  status.className="status ok";
-  status.textContent="Tu opinión fue registrada. Gracias por participar.";
-  await loadResults();
-}
 
 async function loadResults(){
   const {data,error}=await db.rpc("get_poll_results");
@@ -192,4 +186,3 @@ setInterval(loadResults,30000);
 </script>
 </body>
 </html>
-<!-- Actualización para registro de IP -->
